@@ -1,0 +1,52 @@
+name: $(BuildDefinitionName)$(SourceBranchName)$(date:yyyyMMdd)$(rev:.r)
+
+trigger: none
+
+parameters:
+- name: tfcodelocation
+  type: string
+
+variables: # terraform variables
+ ServiceConnectionName: 'TerraformWorkloadIdentity'
+ bk-rg-name: 'ud-use-dev-tf-rg01'
+ bk-str-account-name: 'udusedevtfstr01'
+ bk-container-name: 'tfstate'
+ bk-key: 'terraform.tfstate' # key is actually name of the file, determined here
+
+pool:
+  vmImage: ubuntu-latest # This is the default if you don't specify a pool or vmImage.
+
+stages:
+
+  - stage: validate_terraform
+    displayName: 'Validate Terraform'
+
+    jobs:
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/dev')}}: #if branch is dev then execute
+      - template: plan.yml
+        parameters:
+          env: dev
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main')}}: #if branch is master then execute
+      - template: plan.yml
+        parameters:
+          env: prd
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+
+  - stage: deploy_terraform
+    displayName: 'Deploy Terraform'
+    dependsOn:
+    - validate_terraform # makes sure validate_terraform stage runs first
+    condition: succeeded('validate_terraform') ## stage runs only if validate_terraform is successful
+
+    jobs:
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/dev')}}: #if branch is dev then execute
+      - template: deploy.yml
+        parameters:
+          env: dev
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main')}}: #if branch is master then execute
+      - template: deploy.yml
+        parameters:
+          env: prd
+          tfcodelocation: "${{ parameters.tfcodelocation }}"

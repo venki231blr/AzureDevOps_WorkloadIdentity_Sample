@@ -1,0 +1,49 @@
+name: $(BuildDefinitionName)$(SourceBranchName)$(date:yyyyMMdd)$(rev:.r)
+
+trigger: none
+
+parameters:
+- name: tfcodelocation
+  type: string
+
+variables: # terraform variables
+ ServiceConnectionName: 'TerraformWorkloadIdentity'
+ bk-rg-name: 'ud-use-dev-tf-rg01'
+ bk-str-account-name: 'udusedevtfstr01'
+ bk-container-name: 'tfstate'
+ bk-key: 'terraform.tfstate' # key is actually name of the file, determined here
+
+pool:
+  vmImage: ubuntu-latest # This is the default if you don't specify a pool or vmImage.
+
+stages:
+
+  - stage: validate_terraform
+    displayName: 'Validate Terraform'
+
+    jobs:
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/dev')}}: #if branch is development then execute
+      - template: plan.yml
+        parameters:
+          env: dev
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main')}}: #if branch is master then execute
+      - template: plan.yml
+        parameters:
+          env: prd
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+
+  - stage: destroy_terraform
+    displayName: 'Destroy Terraform'
+
+    jobs:
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/dev')}}: #if branch is development then execute
+      - template: plan.yml
+        parameters:
+          env: dev
+          tfcodelocation: "${{ parameters.tfcodelocation }}"
+    - ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main')}}: #if branch is master then execute
+      - template: destroy.yml
+        parameters:
+          env: prd
+          tfcodelocation: "${{ parameters.tfcodelocation }}"

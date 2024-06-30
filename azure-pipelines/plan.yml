@@ -1,0 +1,62 @@
+parameters:
+  env: ''
+  tfcodelocation: ''
+
+jobs:
+  - job: ${{parameters.env}}_validate_tf
+    displayName: 'Validate ${{parameters.env}} terraform scripts'
+    pool:
+      vmImage: windows-latest
+
+    steps:
+    - task: JasonBJohnson.azure-pipelines-tasks-terraform.azure-pipelines-tasks-terraform-installer.TerraformInstaller@0
+      inputs:
+        terraformVersion: 'latest'
+    
+    - task: TerraformTaskV4@4
+      displayName: Initialize Terraform' # init needs to be installed at every stage
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{parameters.tfcodelocation}}'
+        backendServiceArm: $(ServiceConnectionName)
+        backendAzureRmResourceGroupName: $(bk-rg-name)
+        backendAzureRmStorageAccountName: $(bk-str-account-name)
+        backendAzureRmContainerName: $(bk-container-name)
+        backendAzureRmKey: $(bk-key)
+      env:
+        ARM_USE_AZUREAD: true
+    
+    - task: TerraformTaskV4@4
+      displayName: 'Validate Terraform'
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'   
+
+    - task: TerraformTaskV4@4
+      displayName: 'Plan Terraform'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{parameters.tfcodelocation}}'
+        commandOptions: '-lock=false -var-file="vars/${{parameters.env}}.tfvars" -out=$(System.DefaultWorkingDirectory)/${{parameters.tfcodelocation}}/terraform.tfplan'
+        environmentServiceNameAzureRM: $(ServiceConnectionName)
+      env:
+        ARM_USE_AZUREAD: true
+
+          
+    - task: CopyFiles@2
+      displayName: 'Moving Terraform Code to artifact staging'
+      inputs:
+        Contents: '${{parameters.tfcodelocation}}/**'
+        TargetFolder: '$(build.ArtifactStagingDirectory)'
+        # Plan and apply are on different machines
+        # plan state should thus be saved on a file
+        # it will be then be loaded by apply
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Making artifact available to apply stage'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'output-${{parameters.env}}'
+        publishLocation: 'Container'
